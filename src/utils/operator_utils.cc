@@ -9,8 +9,32 @@ Shape infer_broadcast(const Shape &A, const Shape &B) {
     // TODO：对 A 和 B 进行双向广播，返回广播后的形状。
     // REF: https://github.com/onnx/onnx/blob/main/docs/Broadcasting.md
     // =================================== 作业 ===================================
-    
-    return {};
+    // 1. set the larger rank as the output rank
+    size_t rank = std::max(A.size(), B.size());
+    Shape result(rank);
+
+    // 2. start from the right most dimensions
+    int i = A.size() - 1;
+    int j = B.size() - 1;
+    int k = rank - 1;
+
+    while (i >= 0 || j >= 0) {
+        int dimA = (i >= 0) ? A[i] : 1;
+        int dimB = (j >= 0) ? B[j] : 1;
+
+        // 3. validate shapes
+        IT_ASSERT(dimA == dimB || dimA == 1 || dimB == 1);
+
+        // 4. output the larger dimension
+        result[k] = std::max(dimA, dimB);
+
+        // move the indices
+        if (i >= 0) i--;
+        if (j >= 0) j--;
+        k--;
+    }
+
+    return result;
 }
 
 int get_real_axis(const int &axis, const int &rank) {

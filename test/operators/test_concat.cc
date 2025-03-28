@@ -11,6 +11,7 @@ TEST(Concat, ShapeInfer) {
     auto t2 = g->addTensor({1, 3, 2, 5}, DataType::Float32);
 
     auto op = g->addOp<ConcatObj>(TensorVec{t1, t2}, nullptr, 3);
+    Shape shape = op->getOutput()->getDims();
     EXPECT_EQ(op->getOutput()->getDims(), (Shape{1, 3, 2, 9}));
 }
 } // namespace infini

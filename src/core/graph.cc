@@ -1,4 +1,6 @@
 #include "core/graph.h"
+#include "operators/matmul.h"
+#include "operators/transpose.h"
 #include <algorithm>
 #include <numeric>
 #include <queue>
@@ -106,6 +108,70 @@ namespace infini
         // 1. 去除冗余的算子（例如，两个相邻的算子都是 transpose 算子，且做的是相反的操作，可以将其全部删除）
         // 2. 合并算子（例如，矩阵乘算子中含有属性transA、transB，如果其输入存在transpose，且对最后两个维度做交换，就可以将transpose融入到矩阵乘算子的属性中去）
         // =================================== 作业 ===================================
+        OpVec redundantOps;
+        TensorVec redundantTensors;
+
+        for (auto op : ops) {
+            if (!op) continue;
+
+            auto predecessors = op->getPredecessors();
+            if (predecessors.size() == 1 && op->getOpType() == OpType::Transpose) {
+                if (predecessors[0]->getOpType() == OpType::Transpose) {
+                    auto curOp = std::dynamic_pointer_cast<TransposeObj>(op);
+                    auto preOp = std::dynamic_pointer_cast<TransposeObj>(predecessors[0]);
+
+                    if (curOp->getPermute() == preOp->getPermute()) {
+                        auto preInput = preOp->getInputs()[0];
+                        auto curInput = curOp->getInputs()[0];
+
+                        preInput->removeTarget(preOp);
+                        curOp->replaceInput(curInput, preInput);
+                        
+                        redundantTensors.push_back(curInput);
+                        redundantOps.push_back(preOp);
+                        redundantOps.push_back(curOp);
+                    }
+                }
+            } else if (op->getOpType() == OpType::MatMul) {
+                auto curOp = std::dynamic_pointer_cast<MatmulObj>(op);
+                for (size_t i = 0; i < predecessors.size(); i++) {
+                    bool flag = false;
+                    if (predecessors[i]->getOpType() == OpType::Transpose) {
+                        auto preOp = std::dynamic_pointer_cast<TransposeObj>(predecessors[i]);
+                        auto permutation = preOp->getPermute();
+                        if (permutation[permutation.size() - 1] == static_cast<int>(permutation.size() - 2) &&
+                            permutation[permutation.size() - 2] == static_cast<int>(permutation.size() - 1)) {
+                            auto it = std::find(redundantOps.begin(), redundantOps.end(), preOp);
+                            if (it == redundantOps.end()) {
+                                flag = true;
+                                redundantOps.push_back(preOp);
+                            }
+                            
+                            auto preInput = preOp->getInputs()[0];
+                            auto curInput = curOp->getInputs()[i];
+                            preInput->removeTarget(preOp);
+                            preInput->addTarget(curOp);
+                            curOp->replaceInput(curInput, preInput);
+                            curOp->removePredecessors(preOp);
+                            
+                            redundantTensors.push_back(curInput);
+                        }
+                    }
+
+                    if (flag) {
+                        if (i) curOp->setTransB(!curOp->getTransB());
+                        else curOp->setTransA(!curOp->getTransA());
+                    }
+                }
+            }
+        }
+
+        for (auto op : redundantOps) {
+            removeOperator(op);
+        }
+        for (auto tensor : redundantTensors) {
+            removeTensor(tensor);
+        }
     }
 
     Tensor GraphObj::getTensor(int fuid) const
@@ -152,6 +218,18 @@ namespace infini
         // TODO：利用 allocator 给计算图分配内存
         // HINT: 获取分配好的内存指针后，可以调用 tensor 的 setDataBlob 函数给 tensor 绑定内存
         // =================================== 作业 ===================================
+        vector<size_t> offsets;
+        for (const Tensor &tensor : tensors) {
+            offsets.push_back(allocator.alloc(tensor->getBytes()));
+        }
+
+        void *ptr = allocator.getPtr();
+
+        int size = offsets.size();
+        for (int i = 0; i < size; ++i) {
+            auto addr = reinterpret_cast<std::uintptr_t>(ptr) + offsets[i];
+            tensors[i]->setDataBlob(make_ref<BlobObj>(runtime, reinterpret_cast<void*>(addr)));
+        }
 
         allocator.info();
     }
