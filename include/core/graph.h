@@ -52,6 +52,10 @@ namespace infini
         bool topo_sort();
 
         void optimize();
+        void optimize0();
+        void optimize1();
+        void optimize2();
+        void optimize3();
 
         void shape_infer();
 
